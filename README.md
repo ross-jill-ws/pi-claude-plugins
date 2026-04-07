@@ -7,9 +7,10 @@ It bridges Claude's plugin marketplace layout into pi by exposing:
 - **skills** as pi skills
 - **command markdown files** as pi prompt templates / slash commands
 
-The extension only loads plugins that are currently enabled in Claude via:
+The extension only loads plugins that are currently enabled in Claude after checking both:
 
 - `~/.claude/plugins/installed_plugins.json`
+- `~/.claude/settings.json`
 
 ## What gets loaded
 
@@ -51,8 +52,25 @@ The extension does **not** load every plugin found on disk.
 It first reads:
 
 - `~/.claude/plugins/installed_plugins.json`
+- `~/.claude/settings.json`
 
-Then it only loads resources for plugin keys that are enabled there.
+A plugin is loaded only if:
+
+- it exists in `installed_plugins.json`
+- it matches the current scope (`user` or current project)
+- it is **not** explicitly disabled in `settings.json`
+
+If `~/.claude/settings.json` contains:
+
+```json
+{
+  "enabledPlugins": {
+    "playwright-cli@playwright-cli": false
+  }
+}
+```
+
+then that plugin is ignored completely, even if it is installed.
 
 ### Plugin key format
 
@@ -137,10 +155,11 @@ This avoids duplicate, generated, or unrelated content being imported.
 On startup and on `/reload`, the extension:
 
 1. reads `~/.claude/plugins/installed_plugins.json`
-2. determines which Claude plugins are enabled for the current pi cwd
-3. scans the supported skill and command locations
-4. filters out anything not enabled
-5. returns the remaining files to pi via `resources_discover`
+2. reads `~/.claude/settings.json`
+3. determines which Claude plugins are enabled for the current pi cwd
+4. scans the supported skill and command locations
+5. filters out anything not enabled or explicitly disabled
+6. returns the remaining files to pi via `resources_discover`
 
 The extension also prints and notifies a summary like:
 
@@ -151,7 +170,8 @@ The extension also prints and notifies a summary like:
 
 Even when a file exists on disk, it will not be loaded if:
 
-- the plugin is not enabled in `installed_plugins.json`
+- the plugin is not present / enabled in `installed_plugins.json`
+- the plugin is explicitly disabled in `~/.claude/settings.json`
 - the plugin is project-scoped for a different project
 - the file is outside the supported path patterns
 - the file is inside a hidden/ignored directory
@@ -182,7 +202,8 @@ These warnings come from pi's skill loader, not from this extension itself.
 Run `/reload` in pi after:
 
 - enabling or disabling Claude plugins
-- changing `installed_plugins.json`
+- changing `~/.claude/plugins/installed_plugins.json`
+- changing `~/.claude/settings.json`
 - installing/removing marketplace plugins
 - adding/removing skills or command markdown files in the marketplace directories
 

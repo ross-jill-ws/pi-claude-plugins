@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-plugins",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pi extension that exposes Claude marketplace plugin skills from ~/.claude/plugins/marketplaces into the current pi session.",
   "author": "Ross Z",
   "license": "MIT",

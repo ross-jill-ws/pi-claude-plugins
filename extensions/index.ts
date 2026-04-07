@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const MARKETPLACES_DIR = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
 const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const IGNORED_DIRECTORY_NAMES = new Set(["node_modules", "build", "dist", "out"]);
 
 type InstalledPluginEntry = {
@@ -14,6 +15,10 @@ type InstalledPluginEntry = {
 
 type InstalledPluginsFile = {
   plugins?: Record<string, InstalledPluginEntry[]>;
+};
+
+type ClaudeSettingsFile = {
+  enabledPlugins?: Record<string, boolean>;
 };
 
 function shouldIgnoreEntry(name: string, isDirectory: boolean): boolean {
@@ -68,6 +73,20 @@ function isSameOrDescendant(parent: string, target: string): boolean {
   return target === parent || target.startsWith(`${parent}/`);
 }
 
+async function loadPluginEnabledStates(): Promise<Record<string, boolean>> {
+  let raw: string;
+  try {
+    raw = await readFile(CLAUDE_SETTINGS_PATH, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return {};
+    throw error;
+  }
+
+  const parsed = JSON.parse(raw) as ClaudeSettingsFile;
+  return parsed.enabledPlugins ?? {};
+}
+
 async function loadEnabledPluginKeys(cwd: string): Promise<Set<string>> {
   let raw: string;
   try {
@@ -80,10 +99,15 @@ async function loadEnabledPluginKeys(cwd: string): Promise<Set<string>> {
 
   const parsed = JSON.parse(raw) as InstalledPluginsFile;
   const plugins = parsed.plugins ?? {};
+  const pluginEnabledStates = await loadPluginEnabledStates();
   const normalizedCwd = normalizePath(cwd);
   const enabled = new Set<string>();
 
   for (const [pluginKey, entries] of Object.entries(plugins)) {
+    if (pluginEnabledStates[pluginKey] === false) {
+      continue;
+    }
+
     if (!Array.isArray(entries)) continue;
 
     const isEnabledForCwd = entries.some((entry) => {
