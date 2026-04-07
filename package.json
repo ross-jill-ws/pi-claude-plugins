@@ -1,14 +1,23 @@
 {
   "name": "pi-claude-plugins",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension that exposes Claude marketplace plugin skills from ~/.claude/plugins/marketplaces into the current pi session.",
   "author": "Ross Z",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ross-jill-ws/pi-claude-plugins.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ross-jill-ws/pi-claude-plugins/issues"
+  },
+  "homepage": "https://github.com/ross-jill-ws/pi-claude-plugins#readme",
   "keywords": [
     "pi-package",
     "claude",
     "plugins",
-    "skills"
+    "skills",
+    "commands"
   ],
   "files": [
     "extensions",
