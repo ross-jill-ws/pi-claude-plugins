@@ -34,16 +34,14 @@ These are returned to pi as `promptPaths`, so they show up like pi prompt templa
 
 ## Install
 
-### Install as a local pi package
-
 ```bash
-pi install /Users/rossz/workspace/ai-tools/pi/rossz-extensions/pi-claude-plugins
+pi install npm:pi-claude-plugin
 ```
 
-### Try without installing
+## Remove
 
 ```bash
-pi -e /Users/rossz/workspace/ai-tools/pi/rossz-extensions/pi-claude-plugins
+pi remove npm:pi-claude-plugin
 ```
 
 ## How plugin enablement works
