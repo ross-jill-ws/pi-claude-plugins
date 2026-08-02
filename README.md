@@ -35,13 +35,13 @@ These are returned to pi as `promptPaths`, so they show up like pi prompt templa
 ## Install
 
 ```bash
-pi install npm:pi-claude-plugin
+pi install npm:pi-claude-plugins
 ```
 
 ## Remove
 
 ```bash
-pi remove npm:pi-claude-plugin
+pi remove npm:pi-claude-plugins
 ```
 
 ## How plugin enablement works
@@ -166,10 +166,34 @@ On startup and on `/reload`, the extension:
 5. filters out anything not enabled or explicitly disabled
 6. returns the remaining files to pi via `resources_discover`
 
-The extension also prints and notifies a summary like:
+The extension also emits a summary like:
 
 - number of loaded skill files
 - number of loaded command markdown files
+
+The summary is shown **once** per session: as a UI notification in interactive sessions, or as a log line in non-interactive (print/rpc) sessions. See [Silencing the startup summary](#silencing-the-startup-summary) to suppress it.
+
+## Silencing the startup summary
+
+The startup summary can be suppressed in two ways:
+
+1. **Respect pi's global setting.** The extension stays silent when pi's `quietStartup` setting is `true` in `~/.pi/agent/settings.json`. This is the same signal pi core uses to suppress its own startup info (overridable on the CLI with `--verbose`):
+
+   ```json
+   {
+     "quietStartup": true
+   }
+   ```
+
+2. **Explicit per-extension opt-out.** Set the `PI_CLAUDE_PLUGINS_QUIET` environment variable to silence the summary regardless of `quietStartup` (handy when you want the rest of pi's startup info but not this extension's line):
+
+   ```bash
+   export PI_CLAUDE_PLUGINS_QUIET=1
+   ```
+
+   Accepted truthy values: `1`, `true`, `yes`.
+
+Disabling the summary does **not** affect resource loading — skills and commands are still imported into the session either way.
 
 ## Why some Claude resources may still not appear
 

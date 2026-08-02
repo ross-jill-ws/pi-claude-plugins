@@ -6,6 +6,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 const MARKETPLACES_DIR = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
 const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
+const PI_SETTINGS_PATH = path.join(os.homedir(), ".pi", "agent", "settings.json");
 const IGNORED_DIRECTORY_NAMES = new Set(["node_modules", "build", "dist", "out"]);
 
 type InstalledPluginEntry = {
@@ -19,6 +20,10 @@ type InstalledPluginsFile = {
 
 type ClaudeSettingsFile = {
   enabledPlugins?: Record<string, boolean>;
+};
+
+type PiSettingsFile = {
+  quietStartup?: boolean;
 };
 
 function shouldIgnoreEntry(name: string, isDirectory: boolean): boolean {
@@ -182,6 +187,35 @@ async function findResources(cwd: string): Promise<DiscoveredResources> {
   return { skillPaths, promptPaths };
 }
 
+function isTruthyFlag(value: string | undefined): boolean {
+  return value === "1" || value === "true" || value === "yes";
+}
+
+/**
+ * Explicit per-extension opt-out. Set PI_CLAUDE_PLUGINS_QUIET=1 to silence the
+ * startup summary entirely (no terminal output, no UI notification), regardless
+ * of the global quietStartup setting.
+ */
+function isExplicitlyQuiet(): boolean {
+  return isTruthyFlag(process.env.PI_CLAUDE_PLUGINS_QUIET);
+}
+
+/**
+ * Read pi's own agent settings so the summary can respect the ambient
+ * `quietStartup` signal. Missing or unparseable file falls back to defaults;
+ * this never breaks startup.
+ */
+async function loadPiSettings(): Promise<PiSettingsFile> {
+  try {
+    const raw = await readFile(PI_SETTINGS_PATH, "utf8");
+    return JSON.parse(raw) as PiSettingsFile;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return {};
+    return {};
+  }
+}
+
 export default function claudeMarketplaceSkills(pi: ExtensionAPI) {
   async function discoverResources(cwd: string): Promise<DiscoveredResources> {
     const resources = await findResources(cwd);
@@ -197,24 +231,44 @@ export default function claudeMarketplaceSkills(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    const explicitlyQuiet = isExplicitlyQuiet();
+
     try {
+      const piSettings = await loadPiSettings();
+      // Respect pi's ambient "quiet startup" signal. pi core gates its own startup
+      // info behind !getQuietStartup() (overridable via --verbose); do the same here.
+      const quietStartup = piSettings.quietStartup === true;
+
+      if (explicitlyQuiet || quietStartup) {
+        return;
+      }
+
       const resources = await discoverResources(ctx.cwd);
       const skillCount = resources.skillPaths.length;
       const promptCount = resources.promptPaths.length;
+      const hasResources = skillCount > 0 || promptCount > 0;
       const message =
-        skillCount > 0 || promptCount > 0
+        hasResources
           ? `[claude-marketplace-skills] Loaded ${skillCount} skill file${skillCount === 1 ? "" : "s"} and ${promptCount} command file${promptCount === 1 ? "" : "s"} from ${MARKETPLACES_DIR}`
           : `[claude-marketplace-skills] No enabled skill or command files found under ${MARKETPLACES_DIR}`;
 
-      console.log(`${message}\n`);
+      // Emit once: notify in interactive sessions, log in non-interactive (print/rpc) sessions.
+      // Mirrors pi core's own "notify if UI, else log" pattern and avoids double emission.
       if (ctx.hasUI) {
-        ctx.ui.notify(message, skillCount > 0 || promptCount > 0 ? "success" : "warning");
+        ctx.ui.notify(message, hasResources ? "success" : "warning");
+      } else {
+        console.log(`${message}\n`);
       }
     } catch (error) {
+      // Keep failures diagnosable by default; only suppress under the explicit opt-out.
+      if (explicitlyQuiet) {
+        return;
+      }
       const message = `[claude-marketplace-skills] Failed to discover resources: ${(error as Error).message}`;
-      console.log(`${message}\n`);
       if (ctx.hasUI) {
         ctx.ui.notify(message, "error");
+      } else {
+        console.error(`${message}\n`);
       }
     }
   });
