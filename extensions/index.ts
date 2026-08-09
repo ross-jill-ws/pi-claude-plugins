@@ -1,7 +1,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const MARKETPLACES_DIR = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
 const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
@@ -208,7 +208,7 @@ export default function claudeMarketplaceSkills(pi: ExtensionAPI) {
 
       console.log(`${message}\n`);
       if (ctx.hasUI) {
-        ctx.ui.notify(message, skillCount > 0 || promptCount > 0 ? "success" : "warning");
+        ctx.ui.notify(message, skillCount > 0 || promptCount > 0 ? "info" : "warning");
       }
     } catch (error) {
       const message = `[claude-marketplace-skills] Failed to discover resources: ${(error as Error).message}`;
