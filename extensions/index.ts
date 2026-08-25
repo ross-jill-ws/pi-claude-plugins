@@ -129,6 +129,29 @@ async function loadMergedClaudeSettings(cwd: string): Promise<MergedClaudeSettin
   };
 }
 
+// Pi-only layer, applied after all Claude settings are resolved. Lets a user
+// diverge pi from Claude Code (e.g. keep a skill on in Claude but off in pi)
+// without touching shared Claude config. Mirrors the Claude layering:
+// project pi settings beat user pi settings, local beats non-local.
+type PiOverridesFile = {
+  skillOverrides?: Record<string, string>;
+  enabledPlugins?: Record<string, boolean>;
+};
+
+async function loadMergedPiOverrides(cwd: string): Promise<PiOverridesFile> {
+  const files = await Promise.all([
+    readSettingsFile(path.join(os.homedir(), ".pi", "agent", "claude-overrides.json")),
+    readSettingsFile(path.join(cwd, ".pi", "claude-overrides.json")),
+    readSettingsFile(path.join(cwd, ".pi", "claude-overrides.local.json")),
+  ]);
+  const [user, project, projectLocal] = files as PiOverridesFile[];
+
+  return {
+    enabledPlugins: { ...user.enabledPlugins, ...project.enabledPlugins, ...projectLocal.enabledPlugins },
+    skillOverrides: { ...user.skillOverrides, ...project.skillOverrides, ...projectLocal.skillOverrides },
+  };
+}
+
 async function loadEnabledPlugins(
   cwd: string,
 ): Promise<{ enabledKeys: Set<string>; installPaths: Map<string, string[]> }> {
@@ -143,7 +166,9 @@ async function loadEnabledPlugins(
 
   const parsed = JSON.parse(raw) as InstalledPluginsFile;
   const plugins = parsed.plugins ?? {};
-  const { enabledPlugins: pluginEnabledStates } = await loadMergedClaudeSettings(cwd);
+  const claudeEnabled = (await loadMergedClaudeSettings(cwd)).enabledPlugins;
+  const piOverrides = await loadMergedPiOverrides(cwd);
+  const pluginEnabledStates = { ...claudeEnabled, ...piOverrides.enabledPlugins };
   const normalizedCwd = normalizePath(cwd);
   const enabledKeys = new Set<string>();
   const installPaths = new Map<string, string[]>();
@@ -208,7 +233,10 @@ async function discoverSkillsAndCommandsInPlugin(
 }
 
 async function findResources(cwd: string): Promise<DiscoveredResources> {
-  const { skillOverrides } = await loadMergedClaudeSettings(cwd);
+  const claudeOverrides = (await loadMergedClaudeSettings(cwd)).skillOverrides;
+  const piOverrides = await loadMergedPiOverrides(cwd);
+  // Pi-only overrides apply last, after every Claude settings layer.
+  const skillOverrides = { ...claudeOverrides, ...piOverrides.skillOverrides };
   const { enabledKeys, installPaths } = await loadEnabledPlugins(cwd);
   const marketplaceDirs = await readDirectories(MARKETPLACES_DIR);
   const skillPaths: string[] = [];
