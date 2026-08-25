@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const MARKETPLACES_DIR = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
-const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
-const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
+const CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+const MARKETPLACES_DIR = path.join(CLAUDE_CONFIG_DIR, "plugins", "marketplaces");
+const INSTALLED_PLUGINS_PATH = path.join(CLAUDE_CONFIG_DIR, "plugins", "installed_plugins.json");
+const CLAUDE_USER_SETTINGS_PATH = path.join(CLAUDE_CONFIG_DIR, "settings.json");
+const CLAUDE_USER_LOCAL_SETTINGS_PATH = path.join(CLAUDE_CONFIG_DIR, "settings.local.json");
 const IGNORED_DIRECTORY_NAMES = new Set(["node_modules", "build", "dist", "out"]);
 
 type InstalledPluginEntry = {
@@ -75,17 +77,56 @@ function isSameOrDescendant(parent: string, target: string): boolean {
   return target === parent || target.startsWith(`${parent}/`);
 }
 
-async function loadClaudeSettings(): Promise<ClaudeSettingsFile> {
+async function readSettingsFile(filePath: string): Promise<ClaudeSettingsFile> {
   let raw: string;
   try {
-    raw = await readFile(CLAUDE_SETTINGS_PATH, "utf8");
+    raw = await readFile(filePath, "utf8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return {};
     throw error;
   }
 
-  return JSON.parse(raw) as ClaudeSettingsFile;
+  try {
+    return JSON.parse(raw) as ClaudeSettingsFile;
+  } catch {
+    // Claude Code warns and ignores malformed settings files; match that.
+    return {};
+  }
+}
+
+// Merged view of the settings files Claude Code consults, lowest precedence
+// first: user settings, then project settings, then local overrides. Per-key
+// precedence inside each map is local > project > user, matching Claude
+// Code's lookup order for skillOverrides and enabledPlugins.
+type MergedClaudeSettings = {
+  enabledPlugins: Record<string, boolean>;
+  skillOverrides: Record<string, string>;
+};
+
+async function loadMergedClaudeSettings(cwd: string): Promise<MergedClaudeSettings> {
+  const files = await Promise.all([
+    readSettingsFile(CLAUDE_USER_SETTINGS_PATH),
+    readSettingsFile(CLAUDE_USER_LOCAL_SETTINGS_PATH),
+    readSettingsFile(path.join(cwd, ".claude", "settings.json")),
+    readSettingsFile(path.join(cwd, ".claude", "settings.local.json")),
+  ]);
+  const [user, userLocal, project, projectLocal] = files;
+
+  return {
+    enabledPlugins: {
+      ...user.enabledPlugins,
+      ...project.enabledPlugins,
+      ...userLocal.enabledPlugins,
+      ...projectLocal.enabledPlugins,
+    },
+    skillOverrides: {
+      ...user.skillOverrides,
+      ...project.skillOverrides,
+      ...userLocal.skillOverrides,
+      ...projectLocal.skillOverrides,
+    },
+  };
 }
 
 async function loadEnabledPlugins(
@@ -102,8 +143,7 @@ async function loadEnabledPlugins(
 
   const parsed = JSON.parse(raw) as InstalledPluginsFile;
   const plugins = parsed.plugins ?? {};
-  const claudeSettings = await loadClaudeSettings();
-  const pluginEnabledStates = claudeSettings.enabledPlugins ?? {};
+  const { enabledPlugins: pluginEnabledStates } = await loadMergedClaudeSettings(cwd);
   const normalizedCwd = normalizePath(cwd);
   const enabledKeys = new Set<string>();
   const installPaths = new Map<string, string[]>();
@@ -168,8 +208,7 @@ async function discoverSkillsAndCommandsInPlugin(
 }
 
 async function findResources(cwd: string): Promise<DiscoveredResources> {
-  const claudeSettings = await loadClaudeSettings();
-  const skillOverrides = claudeSettings.skillOverrides ?? {};
+  const { skillOverrides } = await loadMergedClaudeSettings(cwd);
   const { enabledKeys, installPaths } = await loadEnabledPlugins(cwd);
   const marketplaceDirs = await readDirectories(MARKETPLACES_DIR);
   const skillPaths: string[] = [];
